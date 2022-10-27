@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torchvision.models as models
+from transformers import BertModel, ViTFeatureExtractor, ViTModel
 
 
 class ImgEncoder(nn.Module):
@@ -34,48 +35,116 @@ class ImgEncoder(nn.Module):
 
         return img_feature
 
+class VinAiTransform(nn.Module):
+    def __init__(self):
+        super(VinAiTransform, self).__init__()
+        
+    
+    def forward(self, image):
+        with torch.no_grad():
+            outputs = model(**image)
+        output.attentions
 
 class QstEncoder(nn.Module):
 
     def __init__(self, qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size):
 
         super(QstEncoder, self).__init__()
+        #print('word_embed_size', word_embed_size)
+        #print('hidden_size', hidden_size)
         self.word2vec = nn.Embedding(qst_vocab_size, word_embed_size)
         self.tanh = nn.Tanh()
         self.lstm = nn.LSTM(word_embed_size, hidden_size, num_layers)
         self.fc = nn.Linear(2*num_layers*hidden_size, embed_size)     # 2 for hidden and cell states
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
 
     def forward(self, question):
-
+        #print("question",question.size())
+        #print(question)
         qst_vec = self.word2vec(question)                             # [batch_size, max_qst_length=30, word_embed_size=300]
+        #print("qst_feature", qst_vec.size())
+        #print(qst_vec)
         qst_vec = self.tanh(qst_vec)
+        #print("qst_feature", qst_vec.size())
         qst_vec = qst_vec.transpose(0, 1)                             # [max_qst_length=30, batch_size, word_embed_size=300]
-        _, (hidden, cell) = self.lstm(qst_vec)                        # [num_layers=2, batch_size, hidden_size=512]
+        #print("qst_vec", qst_vec.size())
+        # print('lstm', self.lstm(qst_vec))
+        #h0 = torch.randn(self.num_layers, 32, self.hidden_size).cuda()
+        #c0 = torch.randn(self.num_layers, 32, self.hidden_size).cuda()
+        #_, (hidden, cell) = self.lstm(qst_vec, (h0, c0))                        # [num_layers=2, batch_size, hidden_size=512 -> 50]
+        _, (hidden, cell) = self.lstm(qst_vec)
+        #print("_", _.size())
+        #print("hidden", hidden.size(), hidden)
+        #print("cell", cell.size(), cell)
+        
         qst_feature = torch.cat((hidden, cell), 2)                    # [num_layers=2, batch_size, 2*hidden_size=1024]
+        #print("qst_feature", qst_feature.size(), qst_feature)
         qst_feature = qst_feature.transpose(0, 1)                     # [batch_size, num_layers=2, 2*hidden_size=1024]
+        #print("qst_feature", qst_feature.size(), qst_feature)
         qst_feature = qst_feature.reshape(qst_feature.size()[0], -1)  # [batch_size, 2*num_layers*hidden_size=2048]
+        #print("qst_feature", qst_feature.size(), qst_feature)
         qst_feature = self.tanh(qst_feature)
+        print("qst_feature", qst_feature.size())
         qst_feature = self.fc(qst_feature)                            # [batch_size, embed_size]
-
+        #print('qst_feature',qst_feature.size())
+        #print(qst_feature)
         return qst_feature
 
 
+class mBert(nn.Module):
+    def __init__(self, max_qst_length, qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size):
+        super(mBert, self).__init__()
+        self.model = BertModel.from_pretrained("bert-base-multilingual-cased", num_labels=2, output_hidden_states=True, output_attentions=True)
+        self.fc = nn.Linear(12* max_qst_length*max_qst_length, embed_size)
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+    def forward(self, question):
+        #encoded_input = tokenizer(ques, return_tensors='pt')
+        #print("question", question.size())
+        output = self.model(question)
+        output_attentions_bert = output.attentions
+        #output_attentions_bert = torch.Tensor(output_attentions_bert)
+        #print("output_attentions_bert", [len(t) for t in output_attentions_bert])
+        #print("output_attentions_bert", [len(t) for t in output_attentions_bert[0]])
+        """for j, idx in enumerate(output_attentions_bert):
+            print(j , "_")
+            print(idx.size())"""
+        #output_attentions_bert = torch.tensor(output_attentions_bert)
+        #output_attentions_bert =output_attentions_bert.reshape(self.batch_size, 1024)
+        output_attentions_bert = output_attentions_bert[-1]
+        output_attentions_bert = torch.stack(list(output_attentions_bert), dim=0)
+        output_attentions_bert = output_attentions_bert.view(-1, output_attentions_bert.size()[1]*output_attentions_bert.size()[2]*output_attentions_bert.size()[3])
+        output_attentions_bert = self.fc(output_attentions_bert)
+        #print(output_attentions_bert.size())
+        return output_attentions_bert
+        #shape 12,32,12,30,30
+
 class VqaModel(nn.Module):
 
-    def __init__(self, embed_size, qst_vocab_size, ans_vocab_size, word_embed_size, num_layers, hidden_size):
+    def __init__(self, embed_size, qst_vocab_size, ans_vocab_size, word_embed_size, num_layers, hidden_size, max_qst_length):
 
         super(VqaModel, self).__init__()
+        self.num_attention_layer = 1
         self.img_encoder = ImgEncoder(embed_size)
-        self.qst_encoder = QstEncoder(qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size)
+        self.qst_encoder = mBert(max_qst_length, qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size)
+        #self.qst_encoder = QstEncoder(qst_vocab_size, word_embed_size, embed_size, num_layers, hidden_size)
         self.tanh = nn.Tanh()
         self.dropout = nn.Dropout(0.5)
+        self.san = nn.ModuleList([Attention(hidden_size, embed_size)]*self.num_attention_layer)
         self.fc1 = nn.Linear(embed_size, ans_vocab_size)
         self.fc2 = nn.Linear(ans_vocab_size, ans_vocab_size)
 
     def forward(self, img, qst):
-
+        #print("qst", qst.shape)
         img_feature = self.img_encoder(img)                     # [batch_size, embed_size]
         qst_feature = self.qst_encoder(qst)                     # [batch_size, embed_size]
+        vi = img_feature
+        u = qst_feature
+        for attn_layer in self.san:
+            u = attn_layer(vi, u)
+        #print("u.size", u.size())
+        combined_feature = u
         combined_feature = torch.mul(img_feature, qst_feature)  # [batch_size, embed_size]
         combined_feature = self.tanh(combined_feature)
         combined_feature = self.dropout(combined_feature)
@@ -83,7 +152,7 @@ class VqaModel(nn.Module):
         combined_feature = self.tanh(combined_feature)
         combined_feature = self.dropout(combined_feature)
         combined_feature = self.fc2(combined_feature)           # [batch_size, ans_vocab_size=1000]
-
+        #print("combined_feature.size", combined_feature.size())
         return combined_feature
 
 class ImgAttentionEncoder(nn.Module):

@@ -8,7 +8,9 @@ from collections import defaultdict
 
 def extract_answers(q_answers, valid_answer_set):
     all_answers = [answer["answer"] for answer in q_answers]
-    valid_answers = [a for a in all_answers if a in valid_answer_set]
+    #print('all_answer', all_answers)
+    #print("valid_answer_set", valid_answer_set)
+    valid_answers = [a for a in all_answers if a in all_answers]
     return all_answers, valid_answers
 
 
@@ -19,23 +21,27 @@ def vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 
         with open(annotation_file % image_set) as f:
             annotations = json.load(f)['annotations']
             qid2ann_dict = {ann['question_id']: ann for ann in annotations}
+            #print("qid2ann_dict", qid2ann_dict)
     else:
         load_answer = False
     with open(question_file % image_set) as f:
         questions = json.load(f)['questions']
     coco_set_name = image_set.replace('-dev', '')
     abs_image_dir = os.path.abspath(image_dir % coco_set_name)
-    image_name_template = 'COCO_'+coco_set_name+'_%012d'
+    image_name_template = '%011d'
     dataset = [None]*len(questions)
     
     unk_ans_count = 0
     for n_q, q in enumerate(questions):
+        #print("n_q", n_q)
+        #print("q", q)
         if (n_q+1) % 10000 == 0:
             print('processing %d / %d' % (n_q+1, len(questions)))
         image_id = q['image_id']
         question_id = q['question_id']
         image_name = image_name_template % image_id
         image_path = os.path.join(abs_image_dir, image_name+'.jpg')
+        #print("image_path", image_path)
         question_str = q['question']
 #         question_tokens = text_processing.tokenize(question_str)
         question_tokens = text_helper.tokenize(question_str)
@@ -54,7 +60,15 @@ def vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 
                 unk_ans_count += 1
             iminfo['all_answers'] = all_answers
             iminfo['valid_answers'] = valid_answers
-            
+            answer_str = ""
+            for key_ in ann:
+                if key_ == 'answers':
+                    for id in ann[key_]:
+                        for key in id:
+                            answer_str = id['answer']
+            answer_tokens = text_helper.tokenize(answer_str)
+            iminfo['answer_tokens'] = answer_tokens
+        print("iminfo", iminfo)   
         dataset[n_q] = iminfo
     print('total %d out of %d answers are <unk>' % (unk_ans_count, len(questions)))
     return dataset
@@ -62,32 +76,32 @@ def vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 
 
 def main(args):
     
-    image_dir = args.input_dir+'/%s/'
+    image_dir = args.input_dir+'/Resized_Images/%s/'
     annotation_file = args.input_dir+'/Annotations/v2_mscoco_%s_annotations.json'
     question_file = args.input_dir+'/Questions/v2_OpenEnded_mscoco_%s_questions.json'
 
-    vocab_answer_file = args.output_dir+'/vocab_answers.txt'
+    vocab_answer_file = args.output_dir+'/str_answers.txt'
 #     answer_dict = text_processing.VocabDict(vocab_answer_file)
     answer_dict = text_helper.VocabDict(vocab_answer_file)
     valid_answer_set = set(answer_dict.word_list)    
     
     train = vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 'train2014')
     valid = vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 'val2014')
-    test = vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 'test2015')
-    test_dev = vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 'test-dev2015')
+    #test = vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 'test2015')
+    #test_dev = vqa_processing(image_dir, annotation_file, question_file, valid_answer_set, 'test-dev2015')
     
     np.save(args.output_dir+'/train.npy', np.array(train))
     np.save(args.output_dir+'/valid.npy', np.array(valid))
     np.save(args.output_dir+'/train_valid.npy', np.array(train+valid))
-    np.save(args.output_dir+'/test.npy', np.array(test))
-    np.save(args.output_dir+'/test-dev.npy', np.array(test_dev))
+    #np.save(args.output_dir+'/test.npy', np.array(test))
+    #np.save(args.output_dir+'/test-dev.npy', np.array(test_dev))
 
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--input_dir', type=str, default='/run/media/hoosiki/WareHouse3/mtb/datasets/VQA',
+    parser.add_argument('--input_dir', type=str, default='../datasets',
                         help='directory for inputs')
 
     parser.add_argument('--output_dir', type=str, default='../datasets',

@@ -13,11 +13,14 @@ def make_vocab_questions(input_dir):
     question_length = []
     datasets = os.listdir(input_dir)
     for dataset in datasets:    
-        with open(os.path.join(input_dir,dataset)) as f:
+        with open(input_dir+'/'+dataset) as f:
             questions = json.load(f)['questions']
+            print(questions)
         set_question_length = [None]*len(questions)
         for iquestion, question in enumerate(questions):
-            words = SENTENCE_SPLIT_REGEX.split(question['question'].lower())
+            tmp = question["question"]
+            #print(tmp)
+            words = SENTENCE_SPLIT_REGEX.split(tmp.lower())
             words = [w.strip() for w in words if len(w.strip()) > 0]
             vocab_set.update(words)
             set_question_length[iquestion] = len(words)
@@ -28,9 +31,9 @@ def make_vocab_questions(input_dir):
     vocab_list.insert(0, '<pad>')
     vocab_list.insert(1, '<unk>')
     
-    with open(os.path.join(args.input_dir, 'vocab_questions.txt'), 'w') as f:
+    """with open(os.path.join(args.input_dir, 'vocab_questions.txt'), 'w') as f:
         f.writelines([w+'\n' for w in vocab_list])
-    
+    """
     print('Make vocabulary for questions')
     print('The number of total words of questions: %d' % len(vocab_set))
     print('Maximum length of question: %d' % np.max(question_length))
@@ -38,7 +41,7 @@ def make_vocab_questions(input_dir):
 
 def make_vocab_answers(input_dir, n_answers):
     """Make dictionary for top n answers and save them into text file."""
-    answers = defaultdict(lambda: 0)
+    """answers = defaultdict(lambda: 0)
     datasets = os.listdir(input_dir)
     for dataset in datasets:
         with open(input_dir+'/'+dataset) as f:
@@ -52,8 +55,30 @@ def make_vocab_answers(input_dir, n_answers):
                 
     answers = sorted(answers, key=answers.get, reverse=True)
     assert('<unk>' not in answers)
-    top_answers = ['<unk>'] + answers[:n_answers-1] # '-1' is due to '<unk>'
+    top_answers = ['<unk>'] + answers[:n_answers-1] # '-1' is due to '<unk>'"""
     
+    vocab_set = set()
+    SENTENCE_SPLIT_REGEX = re.compile(r'(\W+)')
+    question_length = []
+    datasets = os.listdir(input_dir)
+    for dataset in datasets:    
+        with open(input_dir+'/'+dataset) as f:
+            answers = json.load(f)['annotations']
+            print(answers)
+        set_question_length = [None]*len(answers)
+        for iquestion, question in enumerate(answers):
+            tmp = question["question"]
+            #print(tmp)
+            words = SENTENCE_SPLIT_REGEX.split(tmp.lower())
+            words = [w.strip() for w in words if len(w.strip()) > 0]
+            vocab_set.update(words)
+            set_question_length[iquestion] = len(words)
+        question_length += set_question_length
+
+    vocab_list = list(vocab_set)
+    vocab_list.sort()
+    vocab_list.insert(0, '<pad>')
+    vocab_list.insert(1, '<unk>')
     with open(os.path.join(args.input_dir, 'vocab_answers.txt'), 'w') as f:
         f.writelines([w+'\n' for w in top_answers])
 
@@ -64,6 +89,7 @@ def make_vocab_answers(input_dir, n_answers):
 
 def main(args):
     input_dir = args.input_dir
+    #print("input_dir", input_dir)
     n_answers = args.n_answers
     make_vocab_questions(input_dir+'/Questions')
     make_vocab_answers(input_dir+'/Annotations', n_answers)
@@ -71,9 +97,9 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--input_dir', type=str, default='/run/media/hoosiki/WareHouse3/mtb/datasets/VQA',
+    parser.add_argument('--input_dir', type=str, default='../datasets',
                         help='directory for input questions and answers')
-    parser.add_argument('--n_answers', type=int, default=1000,
+    parser.add_argument('--n_answers', type=int, default=10000,
                         help='the number of answers to be kept in vocab')
     args = parser.parse_args()
     main(args)

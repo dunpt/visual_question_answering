@@ -4,12 +4,17 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
+import neptune.new as neptune
 from torch.optim import lr_scheduler
 from data_loader import get_loader
 from models import VqaModel, SANModel
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+"""run = neptune.init(
+    project="21020176/models-vqa",
+    api_token="eyJhcGlfYWRkcmVzcyI6Imh0dHBzOi8vYXBwLm5lcHR1bmUuYWkiLCJhcGlfdXJsIjoiaHR0cHM6Ly9hcHAubmVwdHVuZS5haSIsImFwaV9rZXkiOiIxOTUxNTU3Ny01NTllLTQ5YWQtODg1Yy1jZTQwYTQ3MTg3ZmIifQ==",
+)  """ 
 
 def main(args):
 
@@ -38,13 +43,14 @@ def main(args):
 #         hidden_size=args.hidden_size).to(device)
 
 
-    model = SANModel(
+    model = VqaModel(
         embed_size=args.embed_size,
         qst_vocab_size=qst_vocab_size,
         ans_vocab_size=ans_vocab_size,
         word_embed_size=args.word_embed_size,
         num_layers=args.num_layers,
-        hidden_size=args.hidden_size).to(device)
+        hidden_size=args.hidden_size,
+        max_qst_length = args.max_qst_length).to(device)
     
     criterion = nn.CrossEntropyLoss()
 
@@ -58,7 +64,7 @@ def main(args):
 
     #callbacks = [EarlyStopping(monitor='val_loss', patience=5)]
     #model.set_callbacks(callbacks)
-    early_stop_threshold = 3
+    early_stop_threshold = 30
     best_loss = 99999
     val_increase_count = 0
     stop_training = False
@@ -72,7 +78,7 @@ def main(args):
             running_corr_exp1 = 0
             running_corr_exp2 = 0
             batch_step_size = len(data_loader[phase].dataset) / args.batch_size
-
+            #print(len(data_loader[phase].dataset),data_loader[phase].dataset)
             if phase == 'train':
                 scheduler.step()
                 model.train()
@@ -80,23 +86,39 @@ def main(args):
                 model.eval()
 
             for batch_idx, batch_sample in enumerate(data_loader[phase]):
-<<<<<<< refs/remotes/origin/master
-<<<<<<< refs/remotes/origin/master
+#<<<<<<< refs/remotes/origin/master
+#<<<<<<< refs/remotes/origin/master
 #                 if batch_idx == 1:
 #                     break
+                #print('batch_sample', type(batch_sample))
                 image = batch_sample['image'].to(device)
                 question = batch_sample['question'].to(device)
                 label = batch_sample['answer_label'].to(device)
+                #print("question", type(question))
+                #print("question_size", question.size())
                 multi_choice = batch_sample['answer_multi_choice']  # not tensor, list.
-
+                
+                #print("label", label.size())
+                #print("question", question.size(), question)
                 optimizer.zero_grad()
                 with torch.set_grad_enabled(phase == 'train'):
 
                     output = model(image, question)      # [batch_size, ans_vocab_size=1000]
+                    #print("output", output.size())
+                    #print("type_output", type(output))
                     _, pred_exp1 = torch.max(output, 1)  # [batch_size]
+                    #print("pred_exp1",pred_exp1, pred_exp1.size())
+                    #_, pred_exp2 = torch.max(output, 1)  # [batch_size]
                     _, pred_exp2 = torch.max(output, 1)  # [batch_size]
+                    #print("pred_exp2", pred_exp2)
+                    # print("label", label)
+                    
                     loss = criterion(output, label)
-
+                    """if (phase == 'train'):
+                        run["train/loss"].log(loss)
+                    if phase == 'valid':
+                        run["valid/loss"].log(loss)"""
+                    print("loss", loss)
                     if phase == 'train':
                         loss.backward()
                         optimizer.step()
@@ -116,8 +138,9 @@ def main(args):
 
             # Print the average loss and accuracy in an epoch.
             epoch_loss = running_loss / batch_step_size
-#             epoch_loss = running_loss / 1  ## to be removed
-#             epoch_acc_exp1 = running_corr_exp1.double() / (args.batch_size * 1)     ## to be removed
+            #print("epoch_loss", epoch_loss)
+            #epoch_loss = running_loss / 1  ## to be removed
+            #epoch_acc_exp1 = running_corr_exp1.double() / (args.batch_size * 1)     ## to be removed
             epoch_acc_exp1 = running_corr_exp1.double() / len(data_loader[phase].dataset)      # multiple choice
             epoch_acc_exp2 = running_corr_exp2.double() / len(data_loader[phase].dataset)      # multiple choice
 
@@ -125,17 +148,17 @@ def main(args):
                   .format(phase.upper(), epoch+1, args.num_epochs, epoch_loss, epoch_acc_exp1, epoch_acc_exp2))
 
             # Log the loss and accuracy in an epoch.
-            with open(os.path.join(args.log_dir, '{}-{}-log-epoch-{:02}.txt')
+            """with open(os.path.join(args.log_dir, '{}-{}-log-epoch-{:02}.txt')
                       .format(args.model_name, phase, epoch+1), 'w') as f:
                 f.write(str(epoch+1) + '\t'
                         + str(epoch_loss) + '\t'
                         + str(epoch_acc_exp1.item()) + '\t'
-                        + str(epoch_acc_exp2.item()))
+                        + str(epoch_acc_exp2.item()))"""
 
             if phase == 'valid':
                 if epoch_loss < best_loss:
                     best_loss = epoch_loss
-                    torch.save(model, os.path.join(args.model_dir, 'best_model.pt'))
+                    #torch.save(model, os.path.join(args.model_dir, 'best_model.pt'))
                 if epoch_loss > prev_loss:
                     val_increase_count += 1
                 else:
@@ -144,11 +167,11 @@ def main(args):
                     stop_training = True
                 prev_loss = epoch_loss
         # Save the model check points.
-        if (epoch+1) % args.save_step == 0:
+        """if (epoch+1) % args.save_step == 0:
 #             pass
 #             torch.save({'epoch': epoch+1, 'state_dict': model.state_dict()},
             torch.save(model,
-                       os.path.join(args.model_dir, '{}-epoch-{:02d}.pt'.format(args.model_name, epoch+1)))
+                       os.path.join(args.model_dir, '{}-epoch-{:02d}.pt'.format(args.model_name, epoch+1)))"""
 
         if stop_training:
             break
@@ -173,7 +196,7 @@ if __name__ == '__main__':
                         help='maximum length of question. \
                               the length in the VQA dataset = 26.')
 
-    parser.add_argument('--max_num_ans', type=int, default=10,
+    parser.add_argument('--max_num_ans', type=int, default=30,
                         help='maximum number of answers.')
 
     parser.add_argument('--embed_size', type=int, default=1024,
@@ -202,7 +225,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_epochs', type=int, default=30,
                         help='number of epochs.')
 
-    parser.add_argument('--batch_size', type=int, default=256,
+    parser.add_argument('--batch_size', type=int, default=128,
                         help='batch_size.')
 
     parser.add_argument('--num_workers', type=int, default=8,
